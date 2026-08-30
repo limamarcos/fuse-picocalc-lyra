@@ -3,7 +3,7 @@
 [![Platform](https://img.shields.io/badge/Platform-PicoCalc%20%7C%20Luckfox%20Lyra-blue.svg)](https://github.com/limamarcos/fuse-picocalc-lyra)
 [![OS](https://img.shields.io/badge/OS-Calculinux%20(Linux%206.1)-green.svg)](https://github.com/limamarcos/fuse-picocalc-lyra)
 [![Sound](https://img.shields.io/badge/Audio-Zero--Whine%20ALSA%20Driver-brightgreen.svg)](https://github.com/limamarcos/fuse-picocalc-lyra)
-[![Release](https://img.shields.io/badge/Release-v1.0-blueviolet.svg)](https://github.com/limamarcos/fuse-picocalc-lyra/releases)
+[![Release](https://img.shields.io/badge/Release-v1.0.2-blueviolet.svg)](https://github.com/limamarcos/fuse-picocalc-lyra/releases)
 [![License](https://img.shields.io/badge/License-GPL--2.0-yellow.svg)](LICENSE)
 
 A complete, optimized port of **The Free Unix Spectrum Emulator (Fuse 1.9.1)** for the **PicoCalc** handheld calculator running **Calculinux** on the **Luckfox Lyra (Rockchip RV1103 / RK3506 Cortex-A55)**.
