@@ -1,19 +1,31 @@
 #!/bin/bash
-# PicoCalc launcher for the Fuse ZX Spectrum emulator.
-# - runs from any directory
-# - bare snapshot names (e.g. fuse "serpa.z80") are looked up in
-#   /home/pico/games
-# - always uses pico's config (~/.config/fuse-emulator/fuserc, sound off)
-#   regardless of which user invokes it
+# PicoCalc launcher for Fuse ZX Spectrum emulator
 export HOME=/home/pico
 GAMES=/home/pico/games
 
 args=()
 for a in "$@"; do
-  if [[ $a != -* && ! -e $a && -e $GAMES/$a ]]; then
-    a=$GAMES/$a
+  if [[ $a == -* ]]; then
+    args+=("$a")
+  elif [ -e "$a" ]; then
+    # File exists in caller's current working directory
+    args+=("$(realpath "$a")")
+  elif [ -e "$GAMES/$a" ]; then
+    # File exists in /home/pico/games/
+    args+=("$GAMES/$a")
+  elif [ -e "$HOME/$a" ]; then
+    # File exists in /home/pico/
+    args+=("$HOME/$a")
+  else
+    # Case-insensitive match in /home/pico/games/
+    matched=$(find "$GAMES" -maxdepth 1 -iname "$a" -print -quit 2>/dev/null)
+    if [ -n "$matched" ]; then
+      args+=("$matched")
+    else
+      # Pass through as-is if no match
+      args+=("$a")
+    fi
   fi
-  args+=("$a")
 done
 
 cd /home/pico || exit 1
