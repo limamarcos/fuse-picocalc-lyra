@@ -19,7 +19,10 @@ echo "[*] Installing zero-whine sound driver (picocalc_snd_clean)..."
 KVER=$(uname -r)
 MOD_DIR="/lib/modules/$KVER/extra"
 mkdir -p "$MOD_DIR"
+rm -f "$MOD_DIR/picocalc_snd_pwm.ko" "$MOD_DIR/picocalc_snd_softpwm.ko" "$MOD_DIR/picocalc_snd_dsm.ko" 2>/dev/null || true
 cp "$SCRIPT_DIR/modules/picocalc_snd_clean.ko" "$MOD_DIR/"
+ln -sf picocalc_snd_clean.ko "$MOD_DIR/picocalc_snd_pwm.ko"
+ln -sf picocalc_snd_clean.ko "$MOD_DIR/picocalc_snd_softpwm.ko"
 depmod -a
 
 # Blacklist old noisy drivers & configure auto-load
