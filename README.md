@@ -1,13 +1,24 @@
 # Fuse ZX Spectrum Emulator for PicoCalc (Luckfox Lyra / Calculinux)
 
-[![Platform](https://img.shields.io/badge/Platform-PicoCalc%20%7C%20Luckfox%20Lyra-blue.svg)](https://github.com/)
-[![OS](https://img.shields.io/badge/OS-Calculinux%20(Linux%206.1)-green.svg)](https://github.com/)
-[![Sound](https://img.shields.io/badge/Audio-Zero--Whine%20ALSA%20Driver-brightgreen.svg)](https://github.com/)
-[![Emulator](https://img.shields.io/badge/Fuse-1.9.1-orange.svg)](http://fuse-emulator.sourceforge.net/)
+[![Platform](https://img.shields.io/badge/Platform-PicoCalc%20%7C%20Luckfox%20Lyra-blue.svg)](https://github.com/limamarcos/fuse-picocalc-lyra)
+[![OS](https://img.shields.io/badge/OS-Calculinux%20(Linux%206.1)-green.svg)](https://github.com/limamarcos/fuse-picocalc-lyra)
+[![Sound](https://img.shields.io/badge/Audio-Zero--Whine%20ALSA%20Driver-brightgreen.svg)](https://github.com/limamarcos/fuse-picocalc-lyra)
+[![Release](https://img.shields.io/badge/Release-v1.0-blueviolet.svg)](https://github.com/limamarcos/fuse-picocalc-lyra/releases)
+[![License](https://img.shields.io/badge/License-GPL--2.0-yellow.svg)](LICENSE)
 
 A complete, optimized port of **The Free Unix Spectrum Emulator (Fuse 1.9.1)** for the **PicoCalc** handheld calculator running **Calculinux** on the **Luckfox Lyra (Rockchip RV1103 / RK3506 Cortex-A55)**.
 
-Includes the custom **Zero-Whine ALSA Audio Driver (`picocalc_snd_clean`)** that eliminates the 8 kHz carrier noise and unlocks crystal-clear beeper and chiptune sound from the physical onboard speaker.
+Includes the custom **Zero-Whine ALSA Audio Driver (`picocalc_snd_clean`)** that eliminates the piercing 8 kHz carrier noise and unlocks crystal-clear beeper and chiptune sound from the physical onboard speaker.
+
+---
+
+> [!NOTE]
+> ### 🤖 AI Collaboration & "Vibe-Coding" Disclaimer
+> This project was developed through an interactive **AI "vibe-coding" pairing** between **Marcos Lima**, **Kimi (Moonshot AI)**, and **Google DeepMind's Gemini (Antigravity)**:
+> - **Kimi**: Led the initial porting of Fuse 1.9.1 and libspectrum to the Luckfox Lyra platform, framebuffer rendering integration, and game packaging.
+> - **Gemini**: Diagnosed the physical hardware speaker routing (`GPIO4_B2`), identified the root cause of the 8 kHz carrier whine in the vendor software PWM driver, developed the custom zero-whine lockless softirq audio driver (`picocalc_snd_clean`), integrated native ALSA support into Fuse, and finalized the distribution package.
+> 
+> Released freely for all PicoCalc and retro-computing enthusiasts!
 
 ---
 
@@ -27,7 +38,7 @@ Includes the custom **Zero-Whine ALSA Audio Driver (`picocalc_snd_clean`)** that
 Clone this repository or download the release archive onto your PicoCalc, then run the installer:
 
 ```bash
-git clone https://github.com/<your-username>/fuse-picocalc-lyra.git
+git clone https://github.com/limamarcos/fuse-picocalc-lyra.git
 cd fuse-picocalc-lyra
 sudo bash install.sh
 ```
