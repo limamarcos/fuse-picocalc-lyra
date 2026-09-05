@@ -1,0 +1,64 @@
+{
+  "presets": {
+    "kempston": {
+      "type": "kempston",
+      "description": "Kempston Joystick (Port #1F)"
+    },
+    "sinclair": {
+      "type": "sinclair",
+      "description": "Sinclair Interface 2 (Keys 6,7,8,9,0)"
+    },
+    "cursor": {
+      "type": "cursor",
+      "description": "Cursor Joystick (Keys 5,6,7,8,0)"
+    },
+    "qaop": {
+      "type": "custom",
+      "description": "QAOP + Space",
+      "up": "q",
+      "down": "a",
+      "left": "o",
+      "right": "p",
+      "fire": "space"
+    },
+    "default": {
+      "type": "default",
+      "description": "Standard Cursor Mode (Caps Shift + 5,6,7,8)"
+    }
+  },
+  "games": {
+    "atic atac": "sinclair",
+    "hero": "kempston",
+    "arkanoid": "kempston",
+    "manic miner": "cursor",
+    "jet pac": "kempston",
+    "knight lore": "kempston",
+    "penetrator": "kempston",
+    "daley thompson": "sinclair",
+    "frogger": "cursor",
+    "galaxians": "cursor",
+    "space invaders": "cursor",
+    "scuba dive": "kempston",
+    "tll": "kempston",
+    "barbarian": "kempston",
+    "defenda": "kempston",
+    "halaga": "kempston",
+    "lode 1": "kempston",
+    "lode 2": "kempston",
+    "alien": "kempston",
+    "fight": "kempston",
+    "race": "kempston",
+    "lenda": "kempston",
+    "matrix": "kempston",
+    "planetoids": "cursor",
+    "hobbit": "default",
+    "tornadod": "default",
+    "0basic": "default",
+    "serpa": "default",
+    "sprite": "default",
+    "colblocks": "default",
+    "kwikmaze": "cursor",
+    "kwikmaze2": "cursor",
+    "willy2": "cursor"
+  }
+}

@@ -3,6 +3,10 @@
 export HOME=/home/pico
 GAMES=/home/pico/games
 
+# Unblank screen and disable console screensaver during emulation
+echo 0 > /sys/class/graphics/fb0/blank 2>/dev/null || true
+echo -ne "\033[9;0]\033[14;0]" > /dev/tty1 2>/dev/null || true
+
 args=()
 for a in "$@"; do
   if [[ $a == -* ]]; then

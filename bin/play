@@ -1,0 +1,529 @@
+#!/usr/bin/env python3
+"""
+PicoCalc Game & Control Profile Launcher (play)
+100% Offline Game Selector & D-Pad Key Mapper for Fuse on PicoCalc.
+"""
+
+import os
+import sys
+import json
+import glob
+import subprocess
+import re
+
+GAMES_DIR = os.environ.get("ZX_GAMES_DIR", "/home/pico/games")
+PROFILES_FILE = os.path.join(GAMES_DIR, "profiles.json")
+FUSERC_DIR = os.path.expanduser("~/.config/fuse-emulator")
+FUSERC_FILE = os.path.join(FUSERC_DIR, "fuserc")
+LEGACY_FUSERC = os.path.expanduser("~/.fuserc")
+
+# Fallback games dir for development
+if not os.path.exists(GAMES_DIR) and os.path.exists("/Users/marcos.lima/ZX/PICOCALC/zxspectrum"):
+    GAMES_DIR = "/Users/marcos.lima/ZX/PICOCALC/zxspectrum"
+    PROFILES_FILE = "/Users/marcos.lima/ZX/PICOCALC/fuse-picocalc-lyra/config/profiles.json"
+
+DEFAULT_PROFILES = {
+    "presets": {
+        "kempston": {
+            "type": "kempston",
+            "description": "Kempston Joystick (Port #1F)"
+        },
+        "sinclair": {
+            "type": "sinclair",
+            "description": "Sinclair Interface 2 (Keys 6,7,8,9,0)"
+        },
+        "cursor": {
+            "type": "cursor",
+            "description": "Cursor Joystick (Keys 5,6,7,8,0)"
+        },
+        "qaop": {
+            "type": "custom",
+            "description": "QAOP + Space (Q=Up, A=Down, O=Left, P=Right, Space=Fire)",
+            "up": "q",
+            "down": "a",
+            "left": "o",
+            "right": "p",
+            "fire": "space"
+        },
+        "default": {
+            "type": "default",
+            "description": "Standard Spectrum Cursor Mode (Caps+5,6,7,8)"
+        }
+    },
+    "games": {
+        "atic atac": "sinclair",
+        "hero": "kempston",
+        "arkanoid": "kempston",
+        "manic miner": "cursor",
+        "jet pac": "kempston",
+        "knight lore": "kempston",
+        "penetrator": "kempston",
+        "daley thompson": "sinclair",
+        "frogger": "cursor",
+        "galaxians": "cursor",
+        "space invaders": "cursor",
+        "scuba dive": "kempston",
+        "tll": "kempston",
+        "barbarian": "kempston",
+        "defenda": "kempston",
+        "halaga": "kempston",
+        "lode 1": "kempston",
+        "lode 2": "kempston",
+        "alien": "kempston",
+        "fight": "kempston",
+        "race": "kempston",
+        "lenda": "kempston",
+        "matrix": "kempston",
+        "planetoids": "cursor",
+        "hobbit": "default",
+        "tornadod": "default",
+        "0basic": "default",
+        "serpa": "default",
+        "sprite": "default",
+        "colblocks": "default",
+        "kwikmaze": "cursor",
+        "kwikmaze2": "cursor",
+        "willy2": "cursor"
+    }
+}
+
+# ANSI colors
+CYAN = "\033[1;36m"
+GREEN = "\033[1;32m"
+YELLOW = "\033[1;33m"
+MAGENTA = "\033[1;35m"
+RED = "\033[1;31m"
+BOLD = "\033[1m"
+DIM = "\033[2m"
+RESET = "\033[0m"
+
+
+def load_profiles():
+    if os.path.exists(PROFILES_FILE):
+        try:
+            with open(PROFILES_FILE, "r") as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"{YELLOW}Warning: could not read {PROFILES_FILE} ({e}), using defaults.{RESET}")
+    return DEFAULT_PROFILES.copy()
+
+
+def save_profiles(data):
+    os.makedirs(os.path.dirname(PROFILES_FILE), exist_ok=True)
+    with open(PROFILES_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+def get_installed_games():
+    if not os.path.exists(GAMES_DIR):
+        return []
+    exts = ("*.z80", "*.sna", "*.tap", "*.tzx", "*.szx")
+    files = []
+    for ext in exts:
+        files.extend(glob.glob(os.path.join(GAMES_DIR, ext)))
+    # Exclude system/internal files
+    games = [f for f in files if not os.path.basename(f).startswith(".")]
+    games.sort(key=lambda x: os.path.basename(x).lower())
+    return games
+
+
+def normalize_title(filename):
+    name = os.path.basename(filename)
+    name = re.sub(r"\.(z80|sna|tap|tzx|szx)$", "", name, flags=re.IGNORECASE)
+    # Remove release metadata in brackets/parens for cleaner matching
+    clean = re.sub(r"\(.*?\)|\[.*?\]", "", name).strip()
+    return clean if clean else name
+
+
+def find_profile_for_game(game_file, profiles):
+    base = os.path.basename(game_file).lower()
+    norm = normalize_title(game_file).lower()
+    games_map = profiles.get("games", {})
+    
+    # 1. Exact match on clean title
+    if norm in games_map:
+        return games_map[norm]
+    
+    # 2. Key contained in filename or vice versa
+    for k, v in games_map.items():
+        if k in base or k in norm:
+            return v
+            
+    return "default"
+
+
+def format_profile_desc(profile_val, presets):
+    if isinstance(profile_val, str):
+        if profile_val in presets:
+            return presets[profile_val].get("description", profile_val.upper())
+        return profile_val.upper()
+    elif isinstance(profile_val, dict):
+        p_type = profile_val.get("type", "custom")
+        if p_type == "custom":
+            u = profile_val.get("up", "q")
+            d = profile_val.get("down", "a")
+            l = profile_val.get("left", "o")
+            r = profile_val.get("right", "p")
+            f = profile_val.get("fire", "space")
+            return f"Custom (U:{u} D:{d} L:{l} R:{r} Fire:{f})"
+        return p_type.upper()
+    return "DEFAULT"
+
+
+def build_fuse_command(game_file, profile_val, presets):
+    cmd = ["fuse"]
+    env = os.environ.copy()
+    
+    # Fuse keysym codes from input.h (NOT Linux evdev scancodes!):
+    # INPUT_KEY_Up = 0x100 = 256
+    # INPUT_KEY_Down = 0x101 = 257
+    # INPUT_KEY_Left = 0x102 = 258
+    # INPUT_KEY_Right = 0x103 = 259
+    # INPUT_KEY_space = 32
+    KBD_UP = "256"
+    KBD_DOWN = "257"
+    KBD_LEFT = "258"
+    KBD_RIGHT = "259"
+    KBD_FIRE = "32"
+
+    p_data = {}
+    if isinstance(profile_val, str):
+        p_data = presets.get(profile_val, {"type": profile_val})
+    elif isinstance(profile_val, dict):
+        p_data = profile_val
+
+    p_type = p_data.get("type", "default").lower()
+
+    if p_type == "kempston":
+        cmd.extend([
+            "--kempston",
+            "--joystick-keyboard-output", "2",
+            "--joystick-keyboard-up", KBD_UP,
+            "--joystick-keyboard-down", KBD_DOWN,
+            "--joystick-keyboard-left", KBD_LEFT,
+            "--joystick-keyboard-right", KBD_RIGHT,
+            "--joystick-keyboard-fire", KBD_FIRE
+        ])
+    elif p_type in ("sinclair", "interface2", "sinclair1"):
+        # Sinclair 1 (Port #EFFE: 6,7,8,9,0) = type 3 in Fuse
+        cmd.extend([
+            "--joystick-keyboard-output", "3",
+            "--joystick-keyboard-up", KBD_UP,
+            "--joystick-keyboard-down", KBD_DOWN,
+            "--joystick-keyboard-left", KBD_LEFT,
+            "--joystick-keyboard-right", KBD_RIGHT,
+            "--joystick-keyboard-fire", KBD_FIRE
+        ])
+    elif p_type == "sinclair2":
+        # Sinclair 2 (Port #F7FE: 1,2,3,4,5) = type 4 in Fuse
+        cmd.extend([
+            "--joystick-keyboard-output", "4",
+            "--joystick-keyboard-up", KBD_UP,
+            "--joystick-keyboard-down", KBD_DOWN,
+            "--joystick-keyboard-left", KBD_LEFT,
+            "--joystick-keyboard-right", KBD_RIGHT,
+            "--joystick-keyboard-fire", KBD_FIRE
+        ])
+    elif p_type == "cursor":
+        # Cursor Joystick (5,6,7,8,0) = type 1 in Fuse
+        cmd.extend([
+            "--joystick-keyboard-output", "1",
+            "--joystick-keyboard-up", KBD_UP,
+            "--joystick-keyboard-down", KBD_DOWN,
+            "--joystick-keyboard-left", KBD_LEFT,
+            "--joystick-keyboard-right", KBD_RIGHT,
+            "--joystick-keyboard-fire", KBD_FIRE
+        ])
+    elif p_type == "custom":
+        u = p_data.get("up", "q")
+        d = p_data.get("down", "a")
+        l = p_data.get("left", "o")
+        r = p_data.get("right", "p")
+        f = p_data.get("fire", "space")
+        # Order expected by Fuse custom keys: left, right, up, down, fire
+        env["FUSE_CUSTOM_KEYS"] = f"{l},{r},{u},{d},{f}"
+        cmd.extend([
+            "--joystick-keyboard-output", "8",
+            "--joystick-keyboard-up", KBD_UP,
+            "--joystick-keyboard-down", KBD_DOWN,
+            "--joystick-keyboard-left", KBD_LEFT,
+            "--joystick-keyboard-right", KBD_RIGHT,
+            "--joystick-keyboard-fire", KBD_FIRE
+        ])
+    else:  # default (programming / standard cursor)
+        cmd.extend([
+            "--keyboard-arrows-shifted",
+            "--joystick-keyboard-output", "0"
+        ])
+
+    if game_file:
+        cmd.append(game_file)
+
+    return cmd, env
+
+
+def reset_to_default():
+    """Resets Fuse config files to standard cursor mode."""
+    lines = [
+        "sound=1\n",
+        "sounddevice=default\n",
+        "soundfreq=44100\n",
+        "keyboardarrowsshifted=1\n",
+        "joystickkeyboardoutput=0\n"
+    ]
+    os.makedirs(FUSERC_DIR, exist_ok=True)
+    with open(FUSERC_FILE, "w") as f:
+        f.writelines(lines)
+    with open(LEGACY_FUSERC, "w") as f:
+        f.writelines(lines)
+    print(f"\n{GREEN}✔ Fuse reset to standard Spectrum cursor mode (Caps Shift + 5, 6, 7, 8).{RESET}")
+    print(f"{DIM}Tornado Assembler and BASIC will navigate with normal arrow keys.{RESET}\n")
+
+
+def configure_new_game():
+    """Interactive wizard to configure a game's controls."""
+    print(f"\n{CYAN}{BOLD}=== Configure Game Controls ==={RESET}\n")
+    games = get_installed_games()
+    if not games:
+        print(f"{RED}No games found in {GAMES_DIR}!{RESET}")
+        return
+
+    # Prompt for game name with auto-filtering
+    query = input(f"{BOLD}Enter game name (or first few letters): {RESET}").strip()
+    if not query:
+        print(f"{YELLOW}Cancelled.{RESET}")
+        return
+
+    matches = [g for g in games if query.lower() in os.path.basename(g).lower()]
+    if not matches:
+        print(f"{RED}No installed games matched '{query}'.{RESET}")
+        return
+
+    selected_game = None
+    if len(matches) == 1:
+        selected_game = matches[0]
+        print(f"\nFound: {GREEN}{os.path.basename(selected_game)}{RESET}")
+    else:
+        print(f"\n{BOLD}Multiple games matched '{query}':{RESET}")
+        for i, g in enumerate(matches, 1):
+            print(f"  {CYAN}{i:2d}){RESET} {os.path.basename(g)}")
+        try:
+            choice = int(input(f"\nSelect game (1-{len(matches)}): "))
+            if 1 <= choice <= len(matches):
+                selected_game = matches[choice - 1]
+            else:
+                print(f"{RED}Invalid selection.{RESET}")
+                return
+        except ValueError:
+            print(f"{RED}Invalid input.{RESET}")
+            return
+
+    norm_name = normalize_title(selected_game).lower()
+
+    print(f"\n{BOLD}Select Joystick / Control Type for {GREEN}{os.path.basename(selected_game)}{RESET}:")
+    print(f"  {CYAN}1){RESET} {BOLD}Kempston Joystick{RESET} (Port #1F - e.g. HERO, Jetpac, Penetrator)")
+    print(f"  {CYAN}2){RESET} {BOLD}Sinclair Interface 2{RESET} (Keys 6,7,8,9,0 - e.g. Atic Atac, Daley Thompson)")
+    print(f"  {CYAN}3){RESET} {BOLD}Cursor Joystick{RESET} (Keys 5,6,7,8,0 - e.g. Manic Miner, Frogger)")
+    print(f"  {CYAN}4){RESET} {BOLD}QAOP + Space{RESET} (Q=Up, A=Down, O=Left, P=Right, Space=Fire)")
+    print(f"  {CYAN}5){RESET} {BOLD}Custom Key Sequence{RESET} (Enter any 5 keys)")
+    print(f"  {CYAN}6){RESET} {BOLD}Default / Cursor Keys{RESET} (Standard Caps+5,6,7,8)")
+
+    opt = input(f"\nChoose option (1-6) [default 1]: ").strip()
+    if not opt:
+        opt = "1"
+
+    profiles = load_profiles()
+    mapping = None
+
+    if opt == "1":
+        mapping = "kempston"
+    elif opt == "2":
+        mapping = "sinclair"
+    elif opt == "3":
+        mapping = "cursor"
+    elif opt == "4":
+        mapping = "qaop"
+    elif opt == "5":
+        print(f"\n{BOLD}Enter custom keys (single letter, digit, 'space', or 'enter'):{RESET}")
+        up = input("  Up key    [default 'q']: ").strip().lower() or "q"
+        down = input("  Down key  [default 'a']: ").strip().lower() or "a"
+        left = input("  Left key  [default 'o']: ").strip().lower() or "o"
+        right = input("  Right key [default 'p']: ").strip().lower() or "p"
+        fire = input("  Fire key  [default 'space']: ").strip().lower() or "space"
+        mapping = {
+            "type": "custom",
+            "up": up,
+            "down": down,
+            "left": left,
+            "right": right,
+            "fire": fire
+        }
+    elif opt == "6":
+        mapping = "default"
+    else:
+        print(f"{RED}Invalid option.{RESET}")
+        return
+
+    profiles.setdefault("games", {})[norm_name] = mapping
+    save_profiles(profiles)
+    print(f"\n{GREEN}✔ Saved profile for '{norm_name}' -> {format_profile_desc(mapping, profiles.get('presets', {}))}{RESET}")
+
+    launch_now = input(f"\nLaunch {os.path.basename(selected_game)} now? (Y/n): ").strip().lower()
+    if launch_now in ("", "y", "yes"):
+        launch_game(selected_game, mapping, profiles.get("presets", {}))
+
+
+def list_profiles():
+    profiles = load_profiles()
+    games = get_installed_games()
+    presets = profiles.get("presets", {})
+
+    print(f"\n{CYAN}{BOLD}=== Installed Spectrum Games & Control Profiles ==={RESET}\n")
+    print(f"{'#':<3} {'Game Title':<35} {'Active Control Profile'}")
+    print(f"{'-'*3} {'-'*35} {'-'*30}")
+
+    for idx, g in enumerate(games, 1):
+        prof = find_profile_for_game(g, profiles)
+        desc = format_profile_desc(prof, presets)
+        title = normalize_title(g)[:34]
+        print(f"{CYAN}{idx:2d}{RESET}  {title:<35} {GREEN}{desc}{RESET}")
+    print()
+
+
+def launch_game(game_path, profile_val, presets):
+    cmd, env = build_fuse_command(game_path, profile_val, presets)
+    print(f"\n{CYAN}▶ Launching:{RESET} {BOLD}{os.path.basename(game_path)}{RESET}")
+    print(f"{DIM}Control mapping:{RESET} {GREEN}{format_profile_desc(profile_val, presets)}{RESET}\n")
+    try:
+        subprocess.run(cmd, env=env)
+    except KeyboardInterrupt:
+        pass
+
+
+def interactive_menu():
+    profiles = load_profiles()
+    games = get_installed_games()
+    presets = profiles.get("presets", {})
+
+    if not games:
+        print(f"{RED}No games found in {GAMES_DIR}.{RESET}")
+        return
+
+    while True:
+        print(f"\n{CYAN}{BOLD}🎮 PicoCalc ZX Spectrum Game Launcher{RESET}\n")
+        for i, g in enumerate(games, 1):
+            prof = find_profile_for_game(g, profiles)
+            desc = format_profile_desc(prof, presets)
+            title = normalize_title(g)[:32]
+            print(f"  {CYAN}{i:2d}){RESET} {title:<32} {DIM}[{desc}]{RESET}")
+
+        print(f"\n  {YELLOW}n){RESET} Configure / Map a new game")
+        print(f"  {YELLOW}r){RESET} Reset to default Spectrum cursor mode")
+        print(f"  {YELLOW}q){RESET} Quit")
+
+        choice = input(f"\n{BOLD}Select option or game number: {RESET}").strip().lower()
+        if choice in ("q", "quit", "exit"):
+            break
+        elif choice in ("n", "new", "add"):
+            configure_new_game()
+            profiles = load_profiles()
+        elif choice in ("r", "reset"):
+            reset_to_default()
+        else:
+            try:
+                idx = int(choice)
+                if 1 <= idx <= len(games):
+                    selected = games[idx - 1]
+                    prof = find_profile_for_game(selected, profiles)
+                    launch_game(selected, prof, presets)
+                    break
+                else:
+                    print(f"{RED}Number out of range.{RESET}")
+            except ValueError:
+                # Treat choice as search query
+                matches = [g for g in games if choice in os.path.basename(g).lower()]
+                if len(matches) == 1:
+                    selected = matches[0]
+                    prof = find_profile_for_game(selected, profiles)
+                    launch_game(selected, prof, presets)
+                    break
+                elif len(matches) > 1:
+                    print(f"\n{BOLD}Multiple matches for '{choice}':{RESET}")
+                    for mi, mg in enumerate(matches, 1):
+                        print(f"  {CYAN}{mi}){RESET} {os.path.basename(mg)}")
+                    sub = input("Select number: ").strip()
+                    try:
+                        s_idx = int(sub)
+                        if 1 <= s_idx <= len(matches):
+                            selected = matches[s_idx - 1]
+                            prof = find_profile_for_game(selected, profiles)
+                            launch_game(selected, prof, presets)
+                            break
+                    except ValueError:
+                        pass
+                else:
+                    print(f"{RED}No game matching '{choice}'.{RESET}")
+
+
+def main():
+    args = sys.argv[1:]
+    if not args:
+        interactive_menu()
+        return
+
+    cmd = args[0].lower()
+
+    if cmd in ("new", "add", "-n", "--new"):
+        configure_new_game()
+    elif cmd in ("list", "-l", "--list"):
+        list_profiles()
+    elif cmd in ("reset", "default", "-r", "--reset"):
+        reset_to_default()
+    elif cmd in ("help", "-h", "--help"):
+        print(f"""
+{BOLD}PicoCalc ZX Spectrum Game Launcher (`play`){RESET}
+
+{BOLD}USAGE:{RESET}
+  play                     Interactive game selector menu
+  play <game_name>         Fuzzy-search and launch game with its profile
+  play new                 Configure / map controls for a game
+  play list                List all installed games and active profiles
+  play reset               Reset to standard Spectrum cursor mode (Tornado/BASIC)
+
+{BOLD}EXAMPLES:{RESET}
+  play atic                Launches Atic Atac with Sinclair Interface 2 mapping
+  play hero                Launches HERO with Kempston Joystick mapping
+  play "manic miner"       Launches Manic Miner with Cursor Joystick mapping
+  play new                 Interactive wizard to add custom QAOP/Joystick keys
+""")
+    else:
+        # User entered game search query directly, e.g. "play atic" or "play atic atac"
+        query = " ".join(args).strip().lower()
+        games = get_installed_games()
+        profiles = load_profiles()
+        presets = profiles.get("presets", {})
+
+        matches = [g for g in games if query in os.path.basename(g).lower() or query in normalize_title(g).lower()]
+        if len(matches) == 1:
+            selected = matches[0]
+            prof = find_profile_for_game(selected, profiles)
+            launch_game(selected, prof, presets)
+        elif len(matches) > 1:
+            print(f"\n{BOLD}Multiple games matched '{query}':{RESET}")
+            for i, g in enumerate(matches, 1):
+                prof = find_profile_for_game(g, profiles)
+                print(f"  {CYAN}{i:2d}){RESET} {normalize_title(g):<32} {DIM}[{format_profile_desc(prof, presets)}]{RESET}")
+            try:
+                pick = int(input(f"\nSelect game (1-{len(matches)}): "))
+                if 1 <= pick <= len(matches):
+                    selected = matches[pick - 1]
+                    prof = find_profile_for_game(selected, profiles)
+                    launch_game(selected, prof, presets)
+            except (ValueError, KeyboardInterrupt):
+                print(f"\n{YELLOW}Cancelled.{RESET}")
+        else:
+            print(f"{RED}No game found matching '{query}'. Run 'play' for the full list.{RESET}")
+
+
+if __name__ == "__main__":
+    main()
